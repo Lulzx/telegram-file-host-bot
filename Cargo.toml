@@ -6,6 +6,7 @@ authors = ["Porter Smith <flowbish@gmail.com>"]
 [dependencies]
 url = "^0.5.7"
 hyper = "^0.7.2"
+rand = "*"
 
 [dependencies.telegram-bot]
 git = "https://github.com/flowbish/telegram-bot.git"
