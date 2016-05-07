@@ -77,35 +77,50 @@ fn download_file(url: &Url, destination: &Path, baseurl: &Url) -> io::Result<Url
     let hash = generate_name();
     let filename = replace_filename(&filename, &hash);
     let mut path = destination.to_path_buf();
+    path.push(filename.clone());
     path.set_file_name(&filename);
 
-    try!(download_to_file(url, &path));
+    try!(download_to_file(&url, &path));
 
     // Create the return url that maps to this filename
-    let returl = baseurl.join(&filename).unwrap();
+    let returl = push_url(baseurl.clone(), filename);
     Ok(returl)
 }
 
 fn download_file_user(url: &Url, user: &User, base_download_dir: &Path, base_url: &Url) -> io::Result<Url> {
     // Create the final download directory by combining the base
     // directory with the username, and ensure it exists.
-    let mut download_dir_user = base_download_dir.to_path_buf();
-    let user_path = user_path(&user);
-    download_dir_user.push(user_path.clone());
-    ensure_dir(&download_dir_user);
+    let base_user_path = user_path(&user, base_download_dir);
+    ensure_dir(&base_user_path);
 
     // Create the final URL by combining the base URL and the
     // username.
-    let base_url_user = base_url.join(&user_path).unwrap();
+    let base_user_url = user_url(&user, &base_url);
 
-    download_file(&url, &download_dir_user, &base_url_user)
+    download_file(&url, &base_user_path, &base_user_url)
 }
 
 fn ensure_dir(path: &Path) {
     let _ = std::fs::create_dir(&path);
 }
 
-fn user_path(user: &User) -> String {
+fn user_path(user: &User, path: &Path) -> PathBuf {
+    let mut user_path = path.to_path_buf();
+    user_path.push(get_username(user));
+    user_path
+}
+
+fn push_url(url: Url, item: String) -> Url {
+    let mut url = url;
+    url.path_mut().unwrap().push(item);
+    url
+}
+
+fn user_url(user: &User, base_url: &Url) -> Url {
+    push_url(base_url.clone(), get_username(&user))
+}
+
+fn get_username(user: &User) -> String {
     match user.username {
         Some(ref name) => name.clone(),
         None => "anonymous".into()
@@ -145,7 +160,7 @@ fn main() {
 
                         // Download the final file and create the URL for the user
                         let client_url = download_file_user(&tg_url, &user, &download_dir, &base_url).unwrap();
-                        println!("[INFO] {} direct upload {} ({})", user_path(&user), client_url, tgfile.file_size);
+                        println!("[INFO] {} direct upload {} ({} bytes)", get_username(&user), client_url, tgfile.file_size);
                         let _ = api.send_message(
                             m.chat.id(),
                             format!("{}", client_url),
@@ -158,7 +173,7 @@ fn main() {
                      if let Ok(url) = Url::parse(&txt) {
                         // Download the final file and create the URL for the user
                          let client_url = download_file_user(&url, &user, &download_dir, &base_url).unwrap();
-                         println!("[INFO] {} rehost {} from {}", user_path(&user), client_url, url);
+                         println!("[INFO] {} rehost {} from {}", get_username(&user), client_url, url);
                          let _ = api.send_message(
                              m.chat.id(),
                              format!("{}", client_url),
@@ -173,4 +188,23 @@ fn main() {
     println!("Handling telegram requests!");
 
     tg_listener.join().unwrap();
+}
+
+#[test]
+fn test_file_ops() {
+    let user = User { id: 12345, first_name: "test".into(), last_name: None, username: Some("the_horse".into()) };
+    let filename = "gross.py";
+    let name = "horses";
+    assert_eq!("horses.py", replace_filename(filename, name));
+    assert_eq!("the_horse", get_username(&user));
+}
+
+#[test]
+fn test_url_ops() {
+    let user = User { id: 12345, first_name: "test".into(), last_name: None, username: Some("the_horse".into()) };
+    let filename = "gross.py";
+    let base_url = Url::parse("http://example.com/files").unwrap();
+    let middle_url = user_url(&user, &base_url);
+    let final_url = push_url(middle_url, filename.into());
+    assert_eq!("http://example.com/files/the_horse/gross.py", final_url.serialize());
 }
